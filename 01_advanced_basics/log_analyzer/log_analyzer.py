@@ -11,6 +11,7 @@ import json
 import logging
 import sys
 import argparse
+from collections import namedtuple
 
 # log_format ui_short '$remote_addr  $remote_user $http_x_real_ip [$time_local] "$request" '
 #                     '$status $body_bytes_sent "$http_referer" '
@@ -40,14 +41,14 @@ def get_config_file_from_com_line():
 
 
 def parse_config_file(config_file):
-    try:
-        with open(DEFAULT_CONFIG_PATH + config_file, mode='rt', encoding='utf-8') as f:
-            conf = f.read()
-        conf = json.loads(conf)
-    except Exception as e:
-        raise e
+    filename = os.path.join(DEFAULT_CONFIG_PATH, config_file)
 
-    if type(conf) is not dict:
+    with open(filename, mode='rt', encoding='utf-8') as f:
+        conf = f.read()
+    conf = json.loads(conf)
+
+
+    if isinstance(conf, dict) is not True:
         raise Exception(f'can\'t use "{config_file}" config file')
 
     return conf
@@ -65,10 +66,7 @@ def get_config():
     if config_file:
         logging.info('using config file "%s"', config_file)
 
-        try:
-            config.update(parse_config_file(config_file))
-        except Exception as e:
-            raise e
+        config.update(parse_config_file(config_file))
 
     return config
 
@@ -84,10 +82,6 @@ def parse_record(rec):
         req_time = float(req_time)
     except Exception as e:
         raise e
-    # except IndexError:
-    #     raise Exception("can't parse log record")
-    # except ValueError:
-    #     raise Exception("cant't read request time")
 
     return (url, req_time)
 
@@ -145,23 +139,28 @@ def get_statistic(urls, sum_time, req_count):
 
 
 def find_log(path):
-    last_name = ''
-    last_date = None
+    Log = namedtuple('Log', ['name', 'date'])
+
+    last_log = Log('', None)
 
     try:
         file_list = os.listdir(path)
-    except Exception as e:
-        raise e
+    except FileNotFoundError:
+        logging.error(f'directory {path} not found')
     else:
         for file_name in file_list:
             matches = re.findall(
                 r'^nginx-access-ui.log-(\d{8})(.gz)?$', file_name)
             if matches:
-                log_date = datetime.strptime(matches[0][0], '%Y%m%d')
-                if last_date is None or log_date > last_date:
-                    last_date = log_date
-                    last_name = file_name
-    return (last_name, last_date)
+                try:
+                    last_log.date = datetime.strptime(matches[0][0], '%Y%m%d')
+                except ValueError:
+                    continue
+                if last_log.date is None or last_log.date > last_log.date:
+                    last_log.date = last_log.date
+                    last_log.name = file_name
+
+    return last_log
 
 
 def report_exist(rep_name):
@@ -194,26 +193,23 @@ def report_render(urls_stat, rep_name, rep_templ):
 
 
 def main(config):
-    try:
-        log_name, log_date = find_log(config['LOG_DIR'])
-    except:
-        logging.exception("can't find log file")
-        sys.exit("can't find log file")
 
-    if not log_name:
+    log = find_log(config['LOG_DIR'])
+
+    if not log.name:
         logging.info('log file not found')
         sys.exit('log file not found')
 
-    logging.info('last log file: %s', log_name)
+    logging.info('last log file: %s', log.name)
 
     rep_name = os.path.join(
-        config['REPORT_DIR'], log_date.strftime('report-%Y.%m.%d.html'))
+        config['REPORT_DIR'], log.date.strftime('report-%Y.%m.%d.html'))
 
     if report_exist(rep_name):
-        logging.info('report for "%s" exist', log_name)
+        logging.info('report for "%s" exist', log.name)
         return
 
-    reader = file_reader(os.path.join(config['LOG_DIR'], log_name))
+    reader = file_reader(os.path.join(config['LOG_DIR'], log.name))
 
     urls_stat, sum_time, req_count, error_count = parse_log(reader)
 
@@ -246,4 +242,8 @@ if __name__ == "__main__":
         logging.exception("can't read config file")
         sys.exit("can't read config file")
 
-    main(config)
+    try:
+        main(config)
+    except:
+        logging.exception('unhandled error')
+        sys.exit('unhandled error')
