@@ -141,7 +141,8 @@ def get_statistic(urls, sum_time, req_count):
 def find_log(path):
     Log = namedtuple('Log', ['name', 'date'])
 
-    last_log = Log('', None)
+    last_name = ''
+    last_date = None
 
     try:
         file_list = os.listdir(path)
@@ -153,14 +154,14 @@ def find_log(path):
                 r'^nginx-access-ui.log-(\d{8})(.gz)?$', file_name)
             if matches:
                 try:
-                    last_log.date = datetime.strptime(matches[0][0], '%Y%m%d')
+                    log_date = datetime.strptime(matches[0][0], '%Y%m%d')
                 except ValueError:
                     continue
-                if last_log.date is None or last_log.date > last_log.date:
-                    last_log.date = last_log.date
-                    last_log.name = file_name
+                if last_date is None or log_date > last_date:
+                    last_date = log_date
+                    last_name = file_name
 
-    return last_log
+    return Log(last_name, last_date)
 
 
 def report_exist(rep_name):
