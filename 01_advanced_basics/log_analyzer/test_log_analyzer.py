@@ -96,7 +96,7 @@ class TestLogAnalizer(unittest.TestCase):
         sum_req_time = 4.0
         req_count = 4
 
-        get_statistic(urls, sum_req_time, req_count)
+        urls = get_statistic(urls, sum_req_time, req_count)
 
         self.assertEqual(urls, self.test_stat)
 

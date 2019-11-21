@@ -11,7 +11,7 @@ import json
 import logging
 import sys
 import argparse
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 
 # log_format ui_short '$remote_addr  $remote_user $http_x_real_ip [$time_local] "$request" '
 #                     '$status $body_bytes_sent "$http_referer" '
@@ -47,7 +47,6 @@ def parse_config_file(config_file):
         conf = f.read()
     conf = json.loads(conf)
 
-
     if isinstance(conf, dict) is not True:
         raise Exception(f'can\'t use "{config_file}" config file')
 
@@ -80,8 +79,8 @@ def parse_record(rec):
         url = fields[URL_IDX].strip('"')
         req_time = fields[REQ_TIME_IDX]
         req_time = float(req_time)
-    except Exception as e:
-        raise e
+    except:
+        return None
 
     return (url, req_time)
 
@@ -100,33 +99,37 @@ def file_reader(file_name):
 
 
 def parse_log(file_reader):
-    urls = {}
+    urls = defaultdict(lambda: {
+        'count': 0,
+        'time_sum': 0.0,
+        'times': [],
+        'time_max': 0.0,
+    })
+
     sum_req_time = 0.0
     req_count = 0
     error_count = 0
 
     for line in file_reader:
-        try:
-            url, req_time = parse_record(line)
-        except:
+        req_count += 1
+
+        req = parse_record(line)
+        if req is None:
             error_count += 1
             continue
 
-        req_count += 1
+        url, req_time = req
+
         sum_req_time += req_time
-        url_stat = urls.get(url, {
-            'count': 0,
-            'time_sum': 0.0,
-            'times': [],
-            'time_max': 0.0,
-        })
+
+        url_stat = urls[url]
         url_stat['count'] += 1
         url_stat['time_sum'] += req_time
         url_stat['times'].append(req_time)
         url_stat['time_max'] = req_time if req_time > url_stat['time_max'] else url_stat['time_max']
         urls[url] = url_stat
 
-    return (urls, sum_req_time, req_count, error_count)
+    return (dict(urls), sum_req_time, req_count, error_count)
 
 
 def get_statistic(urls, sum_time, req_count):
@@ -136,6 +139,7 @@ def get_statistic(urls, sum_time, req_count):
         stat['time_avg'] = stat['time_sum']/stat['count']
         stat['time_med'] = median(stat['times'])
         del stat['times']
+    return urls
 
 
 def find_log(path):
@@ -214,6 +218,11 @@ def main(config):
 
     urls_stat, sum_time, req_count, error_count = parse_log(reader)
 
+    if req_count == 0:
+        logging.error('log file is empty')
+        print('log file is empty')
+        return
+
     if error_count/req_count > config['ERROR_RATE']:
         logging.error('error rate exceeded %s value', config['ERROR_RATE'])
         return
@@ -221,7 +230,7 @@ def main(config):
     urls_stat = dict(sorted(urls_stat.items(), key=lambda t: t[1]['time_sum'], reverse=True)[
         :config['REPORT_SIZE']])
 
-    get_statistic(urls_stat, sum_time, req_count)
+    urls_stat = get_statistic(urls_stat, sum_time, req_count)
 
     try:
         report_render(urls_stat, rep_name, config['REPORT_TEMPLATE'])
