@@ -10,8 +10,9 @@ import uuid
 from optparse import OptionParser
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, timedelta
-from scoring import get_interests, get_score
 import re
+
+from scoring import get_interests, get_score
 
 SALT = "Otus"
 ADMIN_LOGIN = "admin"
@@ -57,22 +58,18 @@ class Field(object):
         self.nullable = nullable
 
     def __get__(self, obj, type=None):
-        return self.value
+        return getattr(obj, self.name, None)
 
     def __set__(self, obj, value):
         if not self.nullable and not value:
             raise ValueError("Can't be empty")
 
-        self.value = value
-
+        setattr(obj, self.name, value)
 
 class CharField(Field):
     def __set__(self, obj, value):
-        if value is None:
-            self.value = value
-            return
 
-        if not isinstance(value, str):
+        if self.nullable and not isinstance(value, str):
             raise TypeError('CharField value must be str type')
 
         super(CharField, self).__set__(obj, value)
@@ -82,69 +79,43 @@ class ArgumentsField(Field):
     def __set__(self, obj, value):
         if not isinstance(value, dict):
             raise TypeError('ArgumentsField value must be dict type')
+
         super(ArgumentsField, self).__set__(obj, value)
 
 
 class EmailField(CharField):
     def __set__(self, obj, value):
-        if value is None:
-            self.value = value
-            return
-
-        if value == '' and not self.nullable:
-            raise ValueError("EmailField can't be empty")
-        if value == '' or email_pattern.match(value):
-            self.value = value
-            return
+        if email_pattern.match(value):
+            super(EmailField, self).__set__(obj, value)
         else:
             raise ValueError('Not email')
 
 
 class PhoneField(Field):
     def __set__(self, obj, value):
-        if value is None:
-            self.value = value
-            return
-
-        if value == '' and not self.nullable:
-            raise ValueError("PhoneField can't be empty")
         value = str(value)
-        if value == '' or phone_pattern.match(value):
-            self.value = value
-            return
+        if phone_pattern.match(value):
+            super(PhoneField, self).__set__(obj, value)
         else:
             raise ValueError('Not phone number')
 
 
 class DateField(Field):
     def __set__(self, obj, value):
-        if value is None:
-            self.value = value
-            return
-
         if not self.nullable and not value:
             raise ValueError("Date can't be empty")
 
-        if not value:
-            self.value = None
-            return
+        if value:
+            value = datetime.strptime(value, '%d.%m.%Y')
 
-        self.value = datetime.strptime(value, '%d.%m.%Y')
+        setattr(obj, self.name, value)
 
 
-class BirthDayField(Field):
+class BirthDayField(DateField):
     def __set__(self, obj, value):
-        if value is None:
-            self.value = value
-            return
+        super(BirthDayField, self).__set__(obj, value)
 
-        if not self.nullable and value == '':
-            raise ValueError("Date can't be empty")
-        elif value == '':
-            self.value = None
-            return
-
-        date = datetime.strptime(value, '%d.%m.%Y')
+        date = getattr(obj, self.name)
         now = datetime.now()
 
         full_years = now.year - date.year
@@ -159,16 +130,10 @@ class BirthDayField(Field):
 
 class GenderField(Field):
     def __set__(self, obj, value):
-        if value is None:
-            self.value = value
-            return
-
         if value not in GENDERS:
             raise TypeError("Unknown gender type")
-        if not self.nullable and value is UNKNOWN:
-            raise ValueError("GenderField can't be UNKNOWN")
 
-        self.value = value
+        super(GenderField, self).__set__(obj, value)
 
 
 class ClientIDsField(Field):
@@ -185,9 +150,10 @@ class ClientIDsField(Field):
 class MetaRequest(type):
     def __new__(mcs, name, bases, attrs):
         request_fields = []
-        for key, value in attrs.items():
-            if isinstance(value, Field):
-                request_fields.append((key, value))
+        for name, obj in attrs.items():
+            if isinstance(obj, Field):
+                obj.name = '_' + name
+                request_fields.append((name, obj))
         attrs['request_fields'] = request_fields
 
         return super(MetaRequest, mcs).__new__(mcs, name, bases, attrs)
@@ -196,14 +162,19 @@ class MetaRequest(type):
 class Request(object):
     __metaclass__ = MetaRequest
 
-    def __init__(self, request):
+    def parse_request(self, request):
         for field_name, obj in self.request_fields:
             value = request.get(field_name, None)
-            if value is None and obj.required:
-                raise ValueError("'%s' field is required" % field_name)
-            else:
-                if isinstance(value, unicode):
-                    value = value.encode('utf-8')
+
+            if value is None:
+                if obj.required:
+                    raise ValueError("'%s' field is required" % field_name)
+                else:
+                    continue
+            
+            if isinstance(value, unicode):
+                value = value.encode('utf-8')
+            
             try:
                 setattr(self, field_name, value)
             except:
@@ -226,14 +197,6 @@ class ClientsInterestsRequest(Request):
     client_ids = ClientIDsField(required=True)
     date = DateField(required=False, nullable=True)
 
-    def get_response(self, ctx, store, method, is_admin=False):
-        resp = {}
-        for cid in self.client_ids:
-            resp[cid] = method(store, cid)
-
-        ctx['nclients'] = len(self.client_ids)
-        return resp
-
 
 class OnlineScoreRequest(Request):
     first_name = CharField(required=False, nullable=True)
@@ -242,16 +205,6 @@ class OnlineScoreRequest(Request):
     phone = PhoneField(required=False, nullable=True)
     birthday = BirthDayField(required=False, nullable=True)
     gender = GenderField(required=False, nullable=True)
-
-    def get_response(self, ctx, store, method, is_admin=False):
-        resp = {}
-        fields = self.get_none_empty_fields()
-        if is_admin:
-            resp['score'] = 42
-        else:
-            resp['score'] = method(store, **fields)
-        ctx['has'] = fields.keys()
-        return resp
 
     def field_set_valid(self):
         valid_pairs = (('phone', 'email'), ('first_name',
@@ -274,6 +227,23 @@ class MethodRequest(Request):
     def is_admin(self):
         return self.login == ADMIN_LOGIN
 
+def get_interests_response(request, ctx, store, is_admin=False):
+    resp = {}
+    for cid in request.client_ids:
+        resp[cid] = get_interests(store, cid)
+
+    ctx['nclients'] = len(request.client_ids)
+    return resp
+
+def get_score_response(request, ctx, store, is_admin=False):
+    resp = {}
+    fields = request.get_none_empty_fields()
+    if is_admin:
+        resp['score'] = 42
+    else:
+        resp['score'] = get_score(store, **fields)
+    ctx['has'] = fields.keys()
+    return resp
 
 def check_auth(request):
     if request.is_admin:
@@ -289,8 +259,9 @@ def check_auth(request):
 
 
 def method_handler(request, ctx, store):
+    validated_request = MethodRequest()
     try:
-        validated_request = MethodRequest(request['body'])
+        validated_request.parse_request(request['body'])
     except Exception, e:
         logging.exception("can't validate request")
         return error(INVALID_REQUEST, str(e))
@@ -299,24 +270,23 @@ def method_handler(request, ctx, store):
         return error(FORBIDDEN)
 
     METHODS = {
-        'online_score': (OnlineScoreRequest, get_score),
-        'clients_interests': (ClientsInterestsRequest, get_interests)
+        'online_score': (OnlineScoreRequest, get_score_response),
+        'clients_interests': (ClientsInterestsRequest, get_interests_response)
     }
 
     if validated_request.method not in METHODS:
         return error(INVALID_REQUEST, 'Method not implemented')
 
-    arg_validator, method = METHODS[validated_request.method]
-
+    arg_validator, get_response = METHODS[validated_request.method]
+    validated_arguments = arg_validator()
     try:
-        validated_arguments = arg_validator(validated_request.arguments)
+        validated_arguments.parse_request(validated_request.arguments)
     except Exception, e:
         logging.exception("can't validate request")
         return error(INVALID_REQUEST, str(e))
 
     if validated_arguments.field_set_valid():
-        response = validated_arguments.get_response(
-            ctx, store, method, validated_request.is_admin)
+        response = get_response(validated_arguments, ctx, store, validated_request.is_admin)
         code = OK
     else:
         return error(INVALID_REQUEST, "Not enoth data in request")
