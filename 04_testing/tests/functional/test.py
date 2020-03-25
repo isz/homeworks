@@ -3,16 +3,15 @@
 
 import unittest
 import hashlib
-from functools import wraps
 from datetime import datetime
 import logging
 import json
+from functools import wraps
 
 import redis
 
 import api
 import store
-
 
 def cases(cases_list):
     def decorator(func):
@@ -26,9 +25,7 @@ def cases(cases_list):
 
     return decorator
 
-
 logging.getLogger().setLevel(logging.CRITICAL)
-
 
 class TestRequest(unittest.TestCase):
     def test_request(self):

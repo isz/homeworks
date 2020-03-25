@@ -54,7 +54,6 @@ def error(err_code, msg=None):
 
 class Field(object):
     def __init__(self, required=False, nullable=False):
-        self.value = None
         self.required = required
         self.nullable = nullable
 
