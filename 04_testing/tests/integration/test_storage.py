@@ -11,20 +11,17 @@ from scoring import get_interests, get_score
 import store
 
 
-store.CONFIG.update({
-    "host": "localhost",
-    "port": 7777,
-})
+REDIS_PORT = 7777
 
 
 class TestStorageGoodConnection(TestCase):
     def setUp(self):
         # start redis server
         self.redis_server = subprocess.Popen(shlex.split(
-            'redis-server --port %s' % store.CONFIG['port']), shell=False, stdout=subprocess.PIPE, stderr=sys.stderr)
-        self.redis = redis.Redis(host=store.CONFIG["host"], port=store.CONFIG["port"],
-                                 socket_connect_timeout=store.CONFIG["connect_timeout"], socket_timeout=store.CONFIG["read_write_timeout"])
-        self.store = store.Store()
+            'redis-server --port %s' % REDIS_PORT), shell=False, stdout=subprocess.PIPE, stderr=sys.stderr)
+        self.redis = self.redis = redis.Redis(
+            host='localhost', port=REDIS_PORT, socket_connect_timeout=0.5, socket_timeout=0.5)
+        self.store = store.Store(port=REDIS_PORT)
 
     def tearDown(self):
         self.redis_server.terminate()

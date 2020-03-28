@@ -16,10 +16,7 @@ from tests import cases
 import api
 import store
 
-store.CONFIG.update({
-    "host": "localhost",
-    "port": 7777,
-})
+REDIS_PORT = 7777
 
 logging.getLogger().setLevel(logging.CRITICAL)
 
@@ -29,8 +26,8 @@ class TestMethodHandler(unittest.TestCase):
         self.context = {}
         self.headers = {}
         self.redis_server = subprocess.Popen(shlex.split(
-            'redis-server --port %s' % store.CONFIG['port']), shell=False, stdout=subprocess.PIPE, stderr=sys.stderr)
-        self.store = store.Store()
+            'redis-server --port %s' % REDIS_PORT), shell=False, stdout=subprocess.PIPE, stderr=sys.stderr)
+        self.store = store.Store(port=7777)
 
     def tearDown(self):
         self.redis_server.terminate()
@@ -180,15 +177,13 @@ class TestMethodInterest(unittest.TestCase):
         self.headers = {}
 
         self.redis_server = subprocess.Popen(shlex.split(
-            'redis-server --port %s' % store.CONFIG['port']), shell=False, stdout=subprocess.PIPE, stderr=sys.stderr)
-        self.store = store.Store()
-        self.redis = self.redis = redis.Redis(host=store.CONFIG["host"], port=store.CONFIG["port"],
-                                 socket_connect_timeout=store.CONFIG["connect_timeout"], socket_timeout=store.CONFIG["read_write_timeout"])
-        
+            'redis-server --port %s' % REDIS_PORT), shell=False, stdout=subprocess.PIPE, stderr=sys.stderr)
+        self.store = store.Store(port=REDIS_PORT)
+        self.redis = self.redis = redis.Redis(
+            host='localhost', port=REDIS_PORT, socket_connect_timeout=0.5, socket_timeout=0.5)
+
         for id, value in self.interests.items():
             self.redis.set("i:%s" % id, json.dumps(value))
-
-        
 
     def tearDown(self):
         for id in self.interests.keys():
