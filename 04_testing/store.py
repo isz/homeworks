@@ -1,12 +1,13 @@
 import redis
 import json
+from time import sleep
 
 
 CONFIG = {
     "host": "localhost",
     "port": 6379,
-    "conf_file": "conf.json",
     "retries": 3,
+    "retry_timeout": 0.5,
     "connect_timeout": 0.5,
     "read_write_timeout": 0.5
 }
@@ -30,25 +31,25 @@ class Store(object):
                                        socket_timeout=CONFIG["read_write_timeout"])
 
     def cache_get(self, key):
-        for i in range(CONFIG["retries"]):
-            try:
-                value = self._redis.get(key)
-            except:
-                continue
-            else:
-                try:
-                    value = float(value)
-                except:
-                    pass
-                return value
+        try:
+            value = self.get(key)
+        except:
+            return None
 
-        return None
+        try:
+            value = float(value)
+        except:
+            pass
+        
+        return value
+
 
     def cache_set(self, key, value, lifetime):
         for i in range(CONFIG["retries"]):
             try:
                 self._redis.set(key, value, ex=lifetime)
             except:
+                sleep(CONFIG['retry_timeout'])
                 continue
             else:
                 return
@@ -58,24 +59,9 @@ class Store(object):
             try:
                 value = self._redis.get(key)
             except:
+                sleep(CONFIG['retry_timeout'])
                 continue
             else:
                 return value
 
         raise Exception("Can't read storage")
-
-from time import sleep
-
-if __name__ == "__main__":
-    store = Store()
-    store.cache_set("test", "hello world", 10)
-    try:
-        print store.get("test")
-    except Exception, e:
-        print (str(e))
-
-    sleep(5)
-    print store.get("test")
-    print store.cache_get("test")
-    sleep(5)
-    print store.get("test")

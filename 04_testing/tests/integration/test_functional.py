@@ -1,57 +1,40 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-import unittest
-import hashlib
-from datetime import datetime
-import logging
+# #!/usr/bin/env python
+# # -*- coding: utf-8 -*-
+import sys
 import json
-from functools import wraps
+import shlex
+import hashlib
+import subprocess
+import logging
+import unittest
+from datetime import datetime
 
 import redis
+
+from tests import cases
 
 import api
 import store
 
-def cases(cases_list):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args):
-            for case in cases_list:
-                new_args = args+(case,)
-                func(*new_args)
-
-        return wrapper
-
-    return decorator
+store.CONFIG.update({
+    "host": "localhost",
+    "port": 7777,
+})
 
 logging.getLogger().setLevel(logging.CRITICAL)
-
-class TestRequest(unittest.TestCase):
-    def test_request(self):
-        req_body = {
-            "account": "google",
-            "login": "Vasya",
-            "token": "",
-            "method": "online_score",
-            "arguments": {}
-        }
-
-        req_1 = api.MethodRequest()
-        req_2 = api.MethodRequest()
-        req_1.parse_request(req_body)
-        req_body["login"] = "Petya"
-        req_2.parse_request(req_body)
-
-        self.assertEqual(req_1.login, "Vasya")
-        self.assertEqual(req_2.login, "Petya")
 
 
 class TestMethodHandler(unittest.TestCase):
     def setUp(self):
         self.context = {}
         self.headers = {}
+        self.redis_server = subprocess.Popen(shlex.split(
+            'redis-server --port %s' % store.CONFIG['port']), shell=False, stdout=subprocess.PIPE, stderr=sys.stderr)
         self.store = store.Store()
+
+    def tearDown(self):
+        self.redis_server.terminate()
+        self.redis_server.wait()
 
     def get_response(self, request):
         return api.method_handler({"body": request, "headers": self.headers}, self.context, self.store)
@@ -195,14 +178,24 @@ class TestMethodInterest(unittest.TestCase):
     def setUp(self):
         self.context = {}
         self.headers = {}
-        self.store = store.Store()
 
+        self.redis_server = subprocess.Popen(shlex.split(
+            'redis-server --port %s' % store.CONFIG['port']), shell=False, stdout=subprocess.PIPE, stderr=sys.stderr)
+        self.store = store.Store()
+        self.redis = self.redis = redis.Redis(host=store.CONFIG["host"], port=store.CONFIG["port"],
+                                 socket_connect_timeout=store.CONFIG["connect_timeout"], socket_timeout=store.CONFIG["read_write_timeout"])
+        
         for id, value in self.interests.items():
-            self.store._redis.set("i:%s" % id, json.dumps(value))
+            self.redis.set("i:%s" % id, json.dumps(value))
+
+        
 
     def tearDown(self):
-        for id in self.interests:
-            self.store._redis.delete("i:%s" % id)
+        for id in self.interests.keys():
+            self.redis.delete("i:%s" % id)
+
+        self.redis_server.terminate()
+        self.redis_server.wait()
 
     def get_response(self, request):
         return api.method_handler({"body": request, "headers": self.headers}, self.context, self.store)

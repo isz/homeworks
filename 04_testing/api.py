@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+import re
 import abc
 import json
-import datetime
+import uuid
 import logging
 import hashlib
-import uuid
+import datetime
 from optparse import OptionParser
-from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, timedelta
-import re
+from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
-from scoring import get_interests, get_score
 from store import Store
+from scoring import get_interests, get_score
+
 
 SALT = "Otus"
 ADMIN_LOGIN = "admin"
@@ -65,6 +65,7 @@ class Field(object):
             raise ValueError("Can't be empty")
 
         setattr(obj, self.name, value)
+
 
 class CharField(Field):
     def __set__(self, obj, value):
@@ -171,10 +172,10 @@ class Request(object):
                     raise ValueError("'%s' field is required" % field_name)
                 else:
                     continue
-            
+
             if isinstance(value, unicode):
                 value = value.encode('utf-8')
-            
+
             try:
                 setattr(self, field_name, value)
             except:
@@ -189,7 +190,7 @@ class Request(object):
 
         return fields
 
-    def field_set_valid(self):
+    def fieldset_valid(self):
         return True
 
 
@@ -206,7 +207,7 @@ class OnlineScoreRequest(Request):
     birthday = BirthDayField(required=False, nullable=True)
     gender = GenderField(required=False, nullable=True)
 
-    def field_set_valid(self):
+    def fieldset_valid(self):
         valid_pairs = (('phone', 'email'), ('first_name',
                                             'last_name'), ('gender', 'birthday'))
         fields = self.get_none_empty_fields().keys()
@@ -227,6 +228,7 @@ class MethodRequest(Request):
     def is_admin(self):
         return self.login == ADMIN_LOGIN
 
+
 def get_interests_response(request, ctx, store, is_admin=False):
     resp = {}
     for cid in request.client_ids:
@@ -234,6 +236,7 @@ def get_interests_response(request, ctx, store, is_admin=False):
 
     ctx['nclients'] = len(request.client_ids)
     return resp
+
 
 def get_score_response(request, ctx, store, is_admin=False):
     resp = {}
@@ -244,6 +247,7 @@ def get_score_response(request, ctx, store, is_admin=False):
         resp['score'] = get_score(store, **fields)
     ctx['has'] = fields.keys()
     return resp
+
 
 def check_auth(request):
     if request.is_admin:
@@ -285,8 +289,9 @@ def method_handler(request, ctx, store):
         logging.exception("can't validate request")
         return error(INVALID_REQUEST, str(e))
 
-    if validated_arguments.field_set_valid():
-        response = get_response(validated_arguments, ctx, store, validated_request.is_admin)
+    if validated_arguments.fieldset_valid():
+        response = get_response(validated_arguments, ctx,
+                                store, validated_request.is_admin)
         code = OK
     else:
         return error(INVALID_REQUEST, "Not enoth data in request")
