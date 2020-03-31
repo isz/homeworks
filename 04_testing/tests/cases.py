@@ -6,7 +6,11 @@ def cases(cases_list):
         def wrapper(*args):
             for case in cases_list:
                 new_args = args+(case,)
-                func(*new_args)
+                try:
+                    func(*new_args)
+                except Exception, e:
+                    print '\nTest not passed in case: %s'%str(case)
+                    raise e
 
         return wrapper
 

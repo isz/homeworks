@@ -70,7 +70,7 @@ class Field(object):
 class CharField(Field):
     def __set__(self, obj, value):
 
-        if self.nullable and not isinstance(value, str):
+        if not isinstance(value, str):
             raise TypeError('CharField value must be str type')
 
         super(CharField, self).__set__(obj, value)

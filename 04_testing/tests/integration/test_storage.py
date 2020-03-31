@@ -69,3 +69,57 @@ class TestStorageBadConnection(TestCase):
         st = store.Store()
 
         self.assertEqual(get_interests(st, cid), [])
+
+
+class TestStorageBreakConnection(TestCase):
+    def test_get_score(self):
+        fields = {
+            'phone': '5555555',
+            'email': 'my@email.com',
+        }
+
+        # start redis server
+        redis_server = subprocess.Popen(shlex.split(
+            'redis-server --port %s' % REDIS_PORT), shell=False, stdout=subprocess.PIPE, stderr=sys.stderr)
+
+        redis_client = redis.Redis(
+            host='localhost', port=REDIS_PORT, socket_connect_timeout=0.5, socket_timeout=0.5)
+
+        st = store.Store(port=REDIS_PORT)
+
+        key = "uid:" + hashlib.md5(fields['phone']).hexdigest()
+        value = 1
+
+        redis_client.set(key, value)
+        self.assertEqual(get_score(st, **fields), value)
+
+        redis_client.delete(key)
+
+        redis_server.terminate()
+        redis_server.wait()
+
+        self.assertEqual(get_score(st, **fields), 3)
+
+    def test_get_interests(self):
+        cid = 1
+        interests = ['interest']
+        key = 'i:%s' % cid
+        
+
+        # start redis server
+        redis_server = subprocess.Popen(shlex.split(
+            'redis-server --port %s' % REDIS_PORT), shell=False, stdout=subprocess.PIPE, stderr=sys.stderr)
+        redis_client = redis.Redis(
+            host='localhost', port=REDIS_PORT, socket_connect_timeout=0.5, socket_timeout=0.5)
+
+        st = store.Store(port=REDIS_PORT)
+
+        redis_client.set(key, json.dumps(interests))
+        self.assertEqual(get_interests(st, cid), interests)
+
+        redis_client.delete(key)
+
+        redis_server.terminate()
+        redis_server.wait()
+
+        self.assertEqual(get_interests(st, cid), [])

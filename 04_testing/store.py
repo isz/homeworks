@@ -2,11 +2,23 @@ import redis
 import json
 from time import sleep
 
+def retry_when_failed(attempts=3, attempt_timeout=1):
+    def decorator(func):
+        def wrapped(*args, **kwargs):
+            for _ in range(attempts):
+                try:
+                    result = func(*args, **kwargs)
+                except Exception, e:
+                    sleep(attempt_timeout)
+                else:
+                    return result
+            raise e
+        return wrapped
+    return decorator
+
 
 class Store(object):
-    def __init__(self, host='localhost', port=6379, password=None, retries=3, retry_timeout=0.5, connect_timeout=0.5, read_write_timeout=0.5):
-        self.retries = retries
-        self.retry_timeout = retry_timeout
+    def __init__(self, host='localhost', port=6379, password=None, connect_timeout=0.5, read_write_timeout=0.5):
         self._redis = redis.Redis(host=host, port=port, password=password,
                                   socket_connect_timeout=connect_timeout,
                                   socket_timeout=read_write_timeout)
@@ -23,24 +35,13 @@ class Store(object):
 
         return value
 
+    @retry_when_failed()
     def cache_set(self, key, value, lifetime):
-        for i in range(self.retries):
-            try:
-                self._redis.set(key, value, ex=lifetime)
-            except:
-                sleep(self.retry_timeout)
-                continue
-            else:
-                return
+        try:
+            self._redis.set(key, value, ex=lifetime)
+        except:
+            pass
 
+    @retry_when_failed()
     def get(self, key):
-        for i in range(self.retries):
-            try:
-                value = self._redis.get(key)
-            except:
-                sleep(self.retry_timeout)
-                continue
-            else:
-                return value
-
-        raise Exception("Can't read storage")
+        return self._redis.get(key)
