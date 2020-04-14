@@ -1,4 +1,6 @@
 from functools import wraps
+from unittest import TestCase
+
 
 def cases(cases_list):
     def decorator(func):
@@ -8,11 +10,10 @@ def cases(cases_list):
                 new_args = args+(case,)
                 try:
                     func(*new_args)
-                except Exception, e:
-                    print '\nTest not passed in case: %s'%str(case)
+                except TestCase.failureException, e:
+                    print '\nTest not passed in case: %s' % str(case)
                     raise e
 
         return wrapper
 
     return decorator
-
