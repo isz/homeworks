@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from functools import update_wrapper
+from functools import update_wrapper, wraps
 
 
-def disable():
+def disable(func):
     '''
     Disable a decorator by re-assigning the decorator's name
     to this function. For example, to turn off memoization:
@@ -12,39 +12,65 @@ def disable():
     >>> memo = disable
 
     '''
-    return
+
+    return func
 
 
-def decorator():
+def decorator(dec):
     '''
     Decorate a decorator so that it inherits the docstrings
     and stuff from the function it's decorating.
     '''
-    return
+    def wrapper(func):
+        return update_wrapper(dec(func), func)
+
+    return wrapper
 
 
-def countcalls():
+def countcalls(func):
     '''Decorator that counts calls made to the function decorated.'''
-    return
+    @wraps(func)
+    def wrapper(*args):
+        wrapper.calls += 1
+        return func(*args)
+    wrapper.calls = 0
+    return wrapper
 
 
-def memo():
+def memo(func):
     '''
     Memoize a function so that it caches all return values for
     faster future lookups.
     '''
-    return
+    cache = {}
+    @wraps(func)
+    def wrapper(*args):
+        if args not in cache:
+            result = func(*args)
+            cache[args] = result
+        else:
+            result = cache[args]
+        update_wrapper(wrapper, func)
+        return result
+
+    return wrapper
 
 
-def n_ary():
+def n_ary(func):
     '''
     Given binary function f(x, y), return an n_ary function such
     that f(x, y, z) = f(x, f(y,z)), etc. Also allow f(x) = x.
     '''
-    return
+    @wraps(func)
+    def wrapper (x, *args):
+        return x if args else wrapper(x, *args)
+    return wrapper
 
+def format_func(func, args):
+    args = ", ".join([str(i) for i in args])
+    return "%s(%s)"%(func.__name__, args)
 
-def trace():
+def trace(filler):
     '''Trace calls made to function decorated.
 
     @trace("____")
@@ -64,7 +90,24 @@ def trace():
      <-- fib(3) == 3
 
     '''
-    return
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args):
+            filler_str = filler * wrapper.nesting
+            func_str = format_func(func, args)
+            print filler_str, "-->", func_str
+
+            wrapper.nesting += 1
+            result = func(*args)
+            wrapper.nesting -= 1
+            
+            print filler_str, "-->", func_str, "-->", result
+            return result
+        
+        wrapper.nesting = 0
+        return wrapper
+    return decorator
 
 
 @memo
